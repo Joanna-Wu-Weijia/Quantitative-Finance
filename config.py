@@ -11,3 +11,22 @@ RESEARCH_END_DATE = '20231231'
 
 # --- 路径配置 ---
 CSV_OUTPUT_DIR = './qlib_source_csvs'
+
+# --- 训练相关 ---
+QLIB_DIR="./qlib_data/my_custom_cn_data"
+#QLIB_DIR="./qlib-main/qlib_data/cn_data"
+
+FEATURE_DICT = {
+    "close_norm": "$close / Mean($close, 15)",
+    "volume_norm": "$volume / Mean($volume, 15)",
+    "return_15d": "$close / Ref($close, 15) - 1",
+    "volatility": "Std($close, 15)",
+    "vwap_ratio": "$vwap / $close"
+}
+LABEL_DICT = {
+    "target_vwap": "Mean(Ref($vwap, -1), 3)" 
+}
+
+# --- 接口相关 ---
+MINI_QMT_PATH= r'D:\国金QMT交易端模拟\userdata_mini'
+ACCOUNT_ID="86004893"

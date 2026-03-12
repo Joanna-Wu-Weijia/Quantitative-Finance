@@ -2,108 +2,78 @@
 import qlib
 from qlib.data.dataset import DatasetH
 from qlib.data.dataset.handler import DataHandlerLP
+from pathlib import Path
 from qlib.data.dataset.processor import RobustZScoreNorm, Fillna
 from qlib.utils import init_instance_by_config
 import pandas as pd
 import numpy as np
-
+from ruamel.yaml import YAML
 import config
 
 class DeepGridStrategy:
     def __init__(self):
-        """
-        初始化策略并连接到本地 Qlib 数据库
-        """
         print("-> [Strategy] 正在初始化 Qlib 引擎...")
         qlib.init(provider_uri=config.QLIB_DIR, region="cn")
         
-        # 网格参数配置
-        self.grid_step = 0.015  # 网格间距 (1.5%)
-        self.trend_threshold = 0.02 # 判定单边趋势的阈值
-        
-    def build_dataset(self, stock_list, start_date, end_date):
-        """
-        利用 Qlib 强大的表达式引擎，实时生成深度学习所需的特征和标签
-        """
-        print("-> [Strategy] 正在构建时序特征与标签数据集...")
-        
-        # 1. 定义特征 (Feature Engineering)
-        # 这里直接使用 Qlib 的表达式公式，无需手动算 Pandas
-        # 例如：计算过去 15 天的各种量价指标
-        feature_dict = {
-            "close_norm": "$close / Mean($close, 15)",
-            "volume_norm": "$volume / Mean($volume, 15)",
-            "return_15d": "$close / Ref($close, 15) - 1",
-            "volatility": "Std($close, 15)",
-            "vwap_ratio": "$vwap / $close"
-        }
-        
-        # 2. 定义预测目标 (Label)
-        # 假设深度学习模型要预测未来 3 天的 VWAP 均值，作为网格中枢
-        label_dict = {
-            "target_vwap": "Mean(Ref($vwap, -1), 3)" 
-        }
+        self.grid_step = 0.015
+        self.trend_threshold = 0.02
+        self.model = None
 
-        # 3. 配置数据处理器 (标准化、去极值、填充缺失值)
-        data_handler_config = {
-            "start_time": start_date,
-            "end_time": end_date,
-            "fit_start_time": start_date,
-            "fit_end_time": "20221231", # 用于 fit 标准化参数的区间
-            "instruments": stock_list,
-            "infer_processors": [
-                {"class": "RobustZScoreNorm", "kwargs": {"fields_group": "feature", "clip_outlier": True}},
-                {"class": "Fillna", "kwargs": {"fields_group": "feature"}}
-            ],
-            "learn_processors": [
-                {"class": "Fillna", "kwargs": {"fields_group": "label"}}
-            ]
-        }
+    def build_dataset_and_model(self, stock_list, start_date, end_date, yaml_path="lstm_config.yaml"):
+        """
+        加载 YAML 配置，动态修改时间和股票池，然后实例化
+        """
+        print(f"-> [Strategy] 正在加载配置文件: {yaml_path}")
         
-        # 实例化 Handler 和 Dataset
-        handler = DataHandlerLP(
-            instruments=stock_list,
-            start_time=start_date,
-            end_time=end_date,
-            infer_processors=data_handler_config["infer_processors"],
-            learn_processors=data_handler_config["learn_processors"],
-            data_loader={
-                "class": "QlibDataLoader",
-                "kwargs": {
-                    "config": {"feature": feature_dict, "label": label_dict}
-                }
-            }
-        )
-        # 这里仅作演示，实际训练时会切分 train/valid/test
-        dataset = DatasetH(handler=handler, segments={"test": (start_date, end_date)})
+        # 1. 使用 ruamel.yaml 读取配置 (遵循你上传的官方示例)
+        yaml = YAML(typ="safe", pure=True)
+        config_file = Path(yaml_path).absolute().resolve()
+        task_config = yaml.load(config_file.open(encoding='utf-8'))
+        
+        # 提取 dataset 和 model 的配置块
+        dataset_config = task_config["task"]["dataset"]
+        model_config = task_config["task"]["model"]
+        
+        # 2. 动态覆盖参数 (实盘中时间和股票池是动态变化的，不能写死在 yaml 里)
+        print("-> [Strategy] 正在将动态参数注入配置...")
+        
+        # 修改 Handler 里的时间和股票池
+        handler_kwargs = dataset_config["kwargs"]["handler"]["kwargs"]
+        handler_kwargs["start_time"] = start_date
+        handler_kwargs["end_time"] = end_date
+        # 为了保证实盘标准化不出错，fit 时间通常固定在回测训练集的时间段
+        handler_kwargs["fit_start_time"] = config.RESEARCH_START_DATE
+        handler_kwargs["fit_end_time"] = "2022-12-31" 
+        handler_kwargs["instruments"] = stock_list
+        
+        # 修改 Dataset 里的 segments (实盘推理时，只需要 test segment 有当前时间即可)
+        segments = dataset_config["kwargs"]["segments"]
+        # 确保 test 段的结束时间包含今天
+        segments["test"] = [start_date, end_date] 
+        
+        # 3. 执行实例化
+        print("-> [Strategy] 正在实例化 Dataset 和 Model...")
+        dataset = init_instance_by_config(dataset_config)
+        self.model = init_instance_by_config(model_config)
+        
+        # 【实盘注意】：此处仅为首次训练演示。实盘中应该 load 已有的权重文件
+        print("-> [Strategy] 开始训练 LSTM 模型...")
+        self.model.fit(dataset)
+        
         return dataset
 
     def get_model_prediction(self, dataset):
-        """
-        调用深度学习模型输出预测值
-        """
-        print("-> [Strategy] 正在调用深度学习模型进行推理...")
+        print("-> [Strategy] 正在调用 LSTM 模型进行推理...")
+        predictions = self.model.predict(dataset, segment="test")
         
-        # =========================================================
-        # [TODO: 接入你们训练好的深度学习模型]
-        # 在实际中，你们可以加载 PyTorch 的 .pth 权重，或者直接使用 Qlib 内置的 pytorch_lstm
-        # 这里为了演示流水线闭环，我们 Mock (模拟) 一个输出结果
-        # =========================================================
-        
-        # 获取清洗好的 DataFrame 特征
-        df_features = dataset.prepare("test", col_set="feature")
-        
-        # 模拟模型输出：假设模型预测明天的中枢价格是今天收盘价的 98% 到 102% 之间震荡
-        np.random.seed(42)
-        mock_predictions = df_features.groupby(level='instrument').apply(
-            lambda x: np.random.uniform(-0.02, 0.02, size=len(x))
-        ).explode().astype(float)
-        
-        # 将 Series 还原为 MultiIndex (datetime, instrument) 的 DataFrame
-        pred_df = pd.DataFrame(mock_predictions, index=df_features.index, columns=['pred_center_return'])
+        if isinstance(predictions, pd.Series):
+            pred_df = predictions.to_frame(name='pred_center_return')
+        else:
+            pred_df = predictions
+            pred_df.columns = ['pred_center_return']
+            
         return pred_df
-
-    def generate_actions(self, predictions_df, current_prices, current_positions):
+    def generate_actions(self, predictions_df:pd.DataFrame, current_prices, current_positions):
         """
         核心网格逻辑：将模型预测转化为具体的交易动作
         """
@@ -149,7 +119,7 @@ class DeepGridStrategy:
                     
         return actions
 
-def run_strategy_pipeline(stock_list, today_str, current_prices, current_positions):
+def run_strategy(stock_list, today_str, current_prices, current_positions):
     """
     供外部 (xtquant) 调用的主函数接口
     """
@@ -159,12 +129,13 @@ def run_strategy_pipeline(stock_list, today_str, current_prices, current_positio
     start_date = (pd.to_datetime(today_str) - pd.Timedelta(days=60)).strftime('%Y%m%d')
     
     # 1. 构建数据
-    dataset = strategy.build_dataset(stock_list, start_date, today_str)
+    dataset = strategy.build_dataset_and_model(stock_list, start_date, today_str)
     
     # 2. 模型推理
     predictions = strategy.get_model_prediction(dataset)
     
     # 3. 生成动作
     actions = strategy.generate_actions(predictions, current_prices, current_positions)
-    
+    print(actions)
     return actions
+

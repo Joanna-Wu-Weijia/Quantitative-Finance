@@ -30,7 +30,7 @@ def convert_to_qlib_csv(stock_list, start_date, end_date, output_dir):
         df = market_data.get(stock)
         if df is None or df.empty:
             continue
-            
+        
         df = df.copy()
         df.index = pd.to_datetime(df.index)
         df.index.name = 'date'
