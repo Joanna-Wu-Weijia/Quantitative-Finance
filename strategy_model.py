@@ -9,11 +9,14 @@ import pandas as pd
 import numpy as np
 from ruamel.yaml import YAML
 import config
+import logging
+import warnings
+warnings.filterwarnings("ignore")
 
 class DeepGridStrategy:
     def __init__(self):
         print("-> [Strategy] 正在初始化 Qlib 引擎...")
-        qlib.init(provider_uri=config.QLIB_DIR, region="cn")
+        qlib.init(provider_uri=config.QLIB_DIR, region="cn",logging_level=logging.INFO)
         
         self.grid_step = 0.015
         self.trend_threshold = 0.02
@@ -39,17 +42,17 @@ class DeepGridStrategy:
         
         # 修改 Handler 里的时间和股票池
         handler_kwargs = dataset_config["kwargs"]["handler"]["kwargs"]
-        handler_kwargs["start_time"] = start_date
-        handler_kwargs["end_time"] = end_date
+        # handler_kwargs["start_time"] = start_date
+        # handler_kwargs["end_time"] = end_date
         # 为了保证实盘标准化不出错，fit 时间通常固定在回测训练集的时间段
-        handler_kwargs["fit_start_time"] = config.RESEARCH_START_DATE
-        handler_kwargs["fit_end_time"] = "2022-12-31" 
+        # handler_kwargs["fit_start_time"] = config.RESEARCH_START_DATE
+        # handler_kwargs["fit_end_time"] = "2022-12-31" 
         handler_kwargs["instruments"] = stock_list
         
         # 修改 Dataset 里的 segments (实盘推理时，只需要 test segment 有当前时间即可)
         segments = dataset_config["kwargs"]["segments"]
         # 确保 test 段的结束时间包含今天
-        segments["test"] = [start_date, end_date] 
+        # segments["test"] = [start_date, end_date] 
         
         # 3. 执行实例化
         print("-> [Strategy] 正在实例化 Dataset 和 Model...")
