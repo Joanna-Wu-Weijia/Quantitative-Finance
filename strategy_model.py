@@ -11,63 +11,71 @@ from ruamel.yaml import YAML
 import config
 import logging
 import warnings
+import os      # [新增] 用于检查文件是否存在
+import torch   # [新增] 用于保存和加载深度学习模型权重
+
+from qlib.contrib.model.pytorch_lstm_ts import LSTM
+
 warnings.filterwarnings("ignore")
 
 class DeepGridStrategy:
     def __init__(self):
         print("-> [Strategy] 正在初始化 Qlib 引擎...")
-        qlib.init(provider_uri=config.QLIB_DIR, region="cn",logging_level=logging.INFO)
+        qlib.init(provider_uri=config.QLIB_DIR, region="cn", logging_level=logging.INFO)
         
         self.grid_step = 0.015
         self.trend_threshold = 0.02
-        self.model = None
+        self.model:LSTM = None
+        self.weight_path = "lstm_model_weights.pth" # 设定权重保存路径
 
-    def build_dataset_and_model(self, stock_list, start_date, end_date, yaml_path="lstm_config.yaml"):
+    def build_dataset_and_model(self, stock_list, start_date, end_date, is_training_day=False, yaml_path="lstm_config.yaml"):
         """
-        加载 YAML 配置，动态修改时间和股票池，然后实例化
+        加载 YAML 配置，动态修改时间和股票池，然后根据日期决定是否训练
         """
         print(f"-> [Strategy] 正在加载配置文件: {yaml_path}")
         
-        # 1. 使用 ruamel.yaml 读取配置 (遵循你上传的官方示例)
         yaml = YAML(typ="safe", pure=True)
         config_file = Path(yaml_path).absolute().resolve()
         task_config = yaml.load(config_file.open(encoding='utf-8'))
         
-        # 提取 dataset 和 model 的配置块
         dataset_config = task_config["task"]["dataset"]
         model_config = task_config["task"]["model"]
         
-        # 2. 动态覆盖参数 (实盘中时间和股票池是动态变化的，不能写死在 yaml 里)
         print("-> [Strategy] 正在将动态参数注入配置...")
-        
-        # 修改 Handler 里的时间和股票池
         handler_kwargs = dataset_config["kwargs"]["handler"]["kwargs"]
-        # handler_kwargs["start_time"] = start_date
-        # handler_kwargs["end_time"] = end_date
-        # 为了保证实盘标准化不出错，fit 时间通常固定在回测训练集的时间段
-        # handler_kwargs["fit_start_time"] = config.RESEARCH_START_DATE
-        # handler_kwargs["fit_end_time"] = "2022-12-31" 
         handler_kwargs["instruments"] = stock_list
         
-        # 修改 Dataset 里的 segments (实盘推理时，只需要 test segment 有当前时间即可)
-        segments = dataset_config["kwargs"]["segments"]
-        # 确保 test 段的结束时间包含今天
-        # segments["test"] = [start_date, end_date] 
-        
-        # 3. 执行实例化
         print("-> [Strategy] 正在实例化 Dataset 和 Model...")
         dataset = init_instance_by_config(dataset_config)
         self.model = init_instance_by_config(model_config)
-        
-        # 【实盘注意】：此处仅为首次训练演示。实盘中应该 load 已有的权重文件
-        print("-> [Strategy] 开始训练 LSTM 模型...")
-        self.model.fit(dataset)
+
+        # ========================================================
+        # 核心修改：根据是否是训练日 (周六) 来决定行为
+        # ========================================================
+        if is_training_day:
+            print("-> [Strategy] 【周末任务】今天是周六，正在利用最新数据重新训练模型...")
+            self.model.fit(dataset,save_path=self.weight_path)
+            # 保存 PyTorch 模型权重
+            print(f"-> [Strategy] 模型重新训练完成！最新权重已保存至: {self.weight_path}")
+            
+        else:
+            print("-> [Strategy] 【工作日任务】今天是交易日，跳过训练流程...")
+            # 检查本地是否已经有训练好的权重文件
+            if os.path.exists(self.weight_path):
+                print(f"-> [Strategy] 发现历史权重文件，正在极速加载: {self.weight_path}")
+                device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+                self.model.LSTM_model.load_state_dict(torch.load(self.weight_path,map_location=device))
+                self.model.fitted=True
+            else:
+                print("-> [警告] 未找到历史权重文件！触发紧急回退机制：正在强制执行初始训练...")
+                self.model.fit(dataset,save_path=self.weight_path)
+                print(f"-> [Strategy] 紧急训练完成，权重已保存至: {self.weight_path}")
         
         return dataset
 
     def get_model_prediction(self, dataset):
         print("-> [Strategy] 正在调用 LSTM 模型进行推理...")
-        predictions = self.model.predict(dataset, segment="test")
+        predictions = self.model.predict(dataset)
         
         if isinstance(predictions, pd.Series):
             pred_df = predictions.to_frame(name='pred_center_return')
@@ -76,40 +84,27 @@ class DeepGridStrategy:
             pred_df.columns = ['pred_center_return']
             
         return pred_df
+
     def generate_actions(self, predictions_df:pd.DataFrame, current_prices, current_positions):
-        """
-        核心网格逻辑：将模型预测转化为具体的交易动作
-        """
         print("-> [Strategy] 正在根据网格规则生成交易信号...")
         actions = {}
         
-        # 遍历每一只股票的预测结果
         for stock in predictions_df.index.get_level_values('instrument').unique():
-            # 获取该股票最新一天的预测收益率
             pred_return = predictions_df.loc[(slice(None), stock), 'pred_center_return'].iloc[-1]
-            
             curr_price = current_prices.get(stock, 0)
             holding_vol = current_positions.get(stock, 0)
             
             if curr_price == 0:
                 continue
                 
-            # 计算深度学习预测的未来绝对中枢价格
             predicted_center = curr_price * (1 + pred_return)
             
-            # --- 结合之前讨论的导数趋势逻辑进行网格判断 ---
-            
             if pred_return > self.trend_threshold:
-                # Long Trend (做多趋势): 预测大幅上涨，不设卖出网格，直接做多
                 actions[stock] = {"action": "BUY", "target_price": curr_price, "reason": "Long Trend"}
-                
             elif pred_return < -self.trend_threshold:
-                # Short Trend (做空趋势): 预测大幅下跌，紧急撤单并平仓
                 if holding_vol > 0:
                     actions[stock] = {"action": "SELL", "target_price": curr_price, "reason": "Short Trend Panic"}
-                    
             else:
-                # Null Trend (无趋势/震荡): 开启网格高抛低吸
                 buy_grid_line = predicted_center * (1 - self.grid_step)
                 sell_grid_line = predicted_center * (1 + self.grid_step)
                 
@@ -124,21 +119,66 @@ class DeepGridStrategy:
 
 def run_strategy(stock_list, today_str, current_prices, current_positions):
     """
-    供外部 (xtquant) 调用的主函数接口
+    供外部调用的主函数接口
     """
     strategy = DeepGridStrategy()
     
-    # 往前推取一段数据用于计算特征
-    start_date = (pd.to_datetime(today_str) - pd.Timedelta(days=60)).strftime('%Y%m%d')
+    # 1. 解析日期，判断星期几 (0: 周一, 1: 周二 ... 5: 周六, 6: 周日)
+    current_date = pd.to_datetime(today_str)
+    day_of_week = current_date.dayofweek
     
-    # 1. 构建数据
-    dataset = strategy.build_dataset_and_model(stock_list, start_date, today_str)
+    # 2. 设定周六 (5) 为训练日，其他时间为推理日
+    is_training_day = (day_of_week == 5)
     
-    # 2. 模型推理
+    start_date = (current_date - pd.Timedelta(days=60)).strftime('%Y%m%d')
+    
+    # 构建数据并根据是否是训练日来决定模型的行为
+    dataset = strategy.build_dataset_and_model(
+        stock_list=stock_list, 
+        start_date=start_date, 
+        end_date=today_str, 
+        is_training_day=is_training_day
+    )
+    
+    # 模型推理与动作生成
     predictions = strategy.get_model_prediction(dataset)
-    
-    # 3. 生成动作
     actions = strategy.generate_actions(predictions, current_prices, current_positions)
-    print(actions)
+    
     return actions
 
+if __name__ == '__main__':
+    import json
+    import traceback
+
+    print("=== 开始本地独立调试 strategy_model ===")
+    
+    test_stock_list = ['SZ000001', 'SH600000']
+    
+    # ==========================================
+    # 调试测试指南：
+    # 2023-10-25 是周三 -> 会触发【工作日极速推理】加载权重 (如果没有权重则紧急训练)
+    # 2023-10-28 是周六 -> 会触发【周末重新训练】覆盖权重
+    # ==========================================
+    test_today_str = '20231025' 
+    
+    test_current_prices = {'SZ000001': 10.50, 'SH600000': 8.20}
+    test_current_positions = {'SZ000001': 1000, 'SH600000': 0}
+
+    print(f"[*] 调试日期: {test_today_str} (星期 {pd.to_datetime(test_today_str).dayofweek + 1})")
+    print(f"[*] 调试标的: {test_stock_list}")
+
+    try:
+        actions = run_strategy(
+            stock_list=test_stock_list,
+            today_str=test_today_str,
+            current_prices=test_current_prices,
+            current_positions=test_current_positions
+        )
+        print("\n=== 调试成功！输出的交易动作 (Actions) ===")
+        print(json.dumps(actions, indent=4, ensure_ascii=False))
+
+    except Exception as e:
+        print(f"\n[-] [调试报错] 策略运行失败: {str(e)}")
+        traceback.print_exc()
+        
+    print("\n=== 本地调试结束 ===")

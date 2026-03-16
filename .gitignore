@@ -7,3 +7,7 @@ qlib_data/
 
 test.py
 qtest.py
+
+*.log
+*.pid
+*.pth
