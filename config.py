@@ -30,3 +30,9 @@ LABEL_DICT = {
 # --- 接口相关 ---
 MINI_QMT_PATH= r'D:\国金QMT交易端模拟\userdata_mini'
 ACCOUNT_ID="86004893"
+# --- 远程 AI 服务器配置 (Linux) ---
+LINUX_SERVER_IP = "192.168.1.154"
+LINUX_SERVER_PORT = 1214
+API_ENDPOINT = f"http://{LINUX_SERVER_IP}:{LINUX_SERVER_PORT}/get_target_actions"
+# --- 交易相关 ---
+MAX_CASH_PER_STOCK = 10000
