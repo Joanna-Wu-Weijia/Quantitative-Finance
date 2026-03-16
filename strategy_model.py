@@ -26,7 +26,7 @@ class DeepGridStrategy:
         self.grid_step = 0.015
         self.trend_threshold = 0.02
         self.model:LSTM = None
-        self.weight_path = "lstm_model_weights.pth" # 设定权重保存路径
+        self.weight_path = config.WEIGHT_PATH # 设定权重保存路径
 
     def build_dataset_and_model(self, stock_list, start_date, end_date, is_training_day=False, yaml_path="lstm_config.yaml"):
         """
@@ -82,7 +82,7 @@ class DeepGridStrategy:
         else:
             pred_df = predictions
             pred_df.columns = ['pred_center_return']
-            
+        pred_df.to_csv("lstm_predictions_2019_2024.csv")    
         return pred_df
 
     def generate_actions(self, predictions_df:pd.DataFrame, current_prices, current_positions):
@@ -153,7 +153,7 @@ if __name__ == '__main__':
 
     print("=== 开始本地独立调试 strategy_model ===")
     
-    test_stock_list = ['SZ200011', 'SZ200012']
+    test_stock_list = ['SZ000001', 'SH600050']
     
     # ==========================================
     # 调试测试指南：
@@ -162,8 +162,8 @@ if __name__ == '__main__':
     # ==========================================
     test_today_str = '20231025' 
     
-    test_current_prices = {'SZ200011': 10.50, 'SZ200012': 8.20}
-    test_current_positions = {'SZ200011': 1000, 'SZ200012': 0}
+    test_current_prices = {'SZ000001': 10.50, 'SH600050': 8.20}
+    test_current_positions = {'SZ000001': 1000, 'SH600050': 0}
 
     print(f"[*] 调试日期: {test_today_str} (星期 {pd.to_datetime(test_today_str).dayofweek + 1})")
     print(f"[*] 调试标的: {test_stock_list}")

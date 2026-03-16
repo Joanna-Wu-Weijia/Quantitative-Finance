@@ -11,3 +11,4 @@ qtest.py
 *.log
 *.pid
 *.pth
+*.csv
