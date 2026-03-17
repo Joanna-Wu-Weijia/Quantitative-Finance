@@ -15,7 +15,7 @@ import os      # [新增] 用于检查文件是否存在
 import torch   # [新增] 用于保存和加载深度学习模型权重
 
 from qlib.contrib.model.pytorch_lstm_ts import LSTM
-
+from qlib.data.dataset import TSDatasetH
 warnings.filterwarnings("ignore")
 
 class DeepGridStrategy:
@@ -26,7 +26,7 @@ class DeepGridStrategy:
         self.grid_step = 0.015
         self.trend_threshold = 0.02
         self.model:LSTM = None
-        self.weight_path = "lstm_model_weights.pth" # 设定权重保存路径
+        self.weight_path = config.WEIGHT_PATH # 设定权重保存路径
 
     def build_dataset_and_model(self, stock_list, start_date, end_date, is_training_day=False, yaml_path="lstm_config.yaml"):
         """
@@ -43,10 +43,10 @@ class DeepGridStrategy:
         
         print("-> [Strategy] 正在将动态参数注入配置...")
         handler_kwargs = dataset_config["kwargs"]["handler"]["kwargs"]
-        handler_kwargs["instruments"] = stock_list
+        handler_kwargs["instruments"] = "all"
         
         print("-> [Strategy] 正在实例化 Dataset 和 Model...")
-        dataset = init_instance_by_config(dataset_config)
+        dataset:TSDatasetH = init_instance_by_config(dataset_config)
         self.model = init_instance_by_config(model_config)
 
         # ========================================================
@@ -82,7 +82,7 @@ class DeepGridStrategy:
         else:
             pred_df = predictions
             pred_df.columns = ['pred_center_return']
-            
+        pred_df.to_csv("lstm_predictions_2019_2024.csv")    
         return pred_df
 
     def generate_actions(self, predictions_df:pd.DataFrame, current_prices, current_positions):
@@ -91,6 +91,7 @@ class DeepGridStrategy:
         
         for stock in predictions_df.index.get_level_values('instrument').unique():
             pred_return = predictions_df.loc[(slice(None), stock), 'pred_center_return'].iloc[-1]
+            pred_return = float(pred_return)
             curr_price = current_prices.get(stock, 0)
             holding_vol = current_positions.get(stock, 0)
             
@@ -152,7 +153,7 @@ if __name__ == '__main__':
 
     print("=== 开始本地独立调试 strategy_model ===")
     
-    test_stock_list = ['SZ000001', 'SH600000']
+    test_stock_list = ['SZ000001', 'SH600050']
     
     # ==========================================
     # 调试测试指南：
@@ -161,8 +162,8 @@ if __name__ == '__main__':
     # ==========================================
     test_today_str = '20231025' 
     
-    test_current_prices = {'SZ000001': 10.50, 'SH600000': 8.20}
-    test_current_positions = {'SZ000001': 1000, 'SH600000': 0}
+    test_current_prices = {'SZ000001': 10.50, 'SH600050': 8.20}
+    test_current_positions = {'SZ000001': 1000, 'SH600050': 0}
 
     print(f"[*] 调试日期: {test_today_str} (星期 {pd.to_datetime(test_today_str).dayofweek + 1})")
     print(f"[*] 调试标的: {test_stock_list}")
@@ -175,6 +176,7 @@ if __name__ == '__main__':
             current_positions=test_current_positions
         )
         print("\n=== 调试成功！输出的交易动作 (Actions) ===")
+        print(actions)
         print(json.dumps(actions, indent=4, ensure_ascii=False))
 
     except Exception as e:

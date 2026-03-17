@@ -15,7 +15,7 @@ CSV_OUTPUT_DIR = './qlib_source_csvs'
 # --- 训练相关 ---
 QLIB_DIR="./qlib_data/my_custom_cn_data"
 #QLIB_DIR="./qlib-main/qlib_data/cn_data"
-
+WEIGHT_PATH="lstm_model_weights.pth"
 FEATURE_DICT = {
     "close_norm": "$close / Mean($close, 15)",
     "volume_norm": "$volume / Mean($volume, 15)",
