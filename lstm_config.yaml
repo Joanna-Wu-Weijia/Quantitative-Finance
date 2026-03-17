@@ -1,13 +1,28 @@
+# ==========================================================
+# 统一全局变量配置区 (修改日期只需在这里改一次即可)
+# ==========================================================
+_train_start: &train_start 2010-01-01
+_train_end: &train_end 2017-12-31
+
+_valid_start: &valid_start 2018-01-01
+_valid_end: &valid_end 2020-12-31
+
+_test_start: &test_start 2021-01-01
+_test_end: &test_end 2026-03-13
+# ==========================================================
+
 qlib_init:
     provider_uri: "~/.qlib/qlib_data/cn_data"
     region: cn
 market: &market csi300
 benchmark: &benchmark SH000300
 data_handler_config: &data_handler_config
-    start_time: 2015-01-05
-    end_time: 2026-03-13
-    fit_start_time: 2015-01-05
-    fit_end_time: 2021-12-31
+    # 整个数据集的起始和结束时间
+    start_time: *train_start
+    end_time: *test_end
+    # 模型 Fit (训练) 阶段的时间特征提取范围
+    fit_start_time: *train_start
+    fit_end_time: *train_end
     instruments: *market
     infer_processors:
         - class: FilterCol
@@ -40,8 +55,9 @@ port_analysis_config: &port_analysis_config
             topk: 50
             n_drop: 5
     backtest:
-        start_time: 2024-01-01
-        end_time: 2026-03-13
+        # 回测撮合引擎的时间范围 (通常与测试集完全对齐)
+        start_time: *test_start
+        end_time: *test_end
         account: 100000000
         benchmark: *benchmark
         exchange_kwargs:
@@ -76,9 +92,10 @@ task:
                 module_path: qlib.contrib.data.handler
                 kwargs: *data_handler_config
             segments:
-                train: [2015-01-05, 2021-12-31]
-                valid: [2022-01-01, 2023-12-31]
-                test: [2024-01-01, 2026-03-13]
+                # 给模型切分数据的确切时间段
+                train: [*train_start, *train_end]
+                valid: [*valid_start, *valid_end]
+                test: [*test_start, *test_end]
             step_len: 20
     record: 
         - class: SignalRecord

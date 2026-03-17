@@ -41,6 +41,20 @@ class DeepGridStrategy:
         dataset_config = task_config["task"]["dataset"]
         model_config = task_config["task"]["model"]
         
+        # ========================================================
+        # 【新增】：从 YAML 中动态提取 test 的起始和结束时间
+        # ========================================================
+        try:
+            test_segment = dataset_config["kwargs"]["segments"]["test"]
+            # 将 ruamel 解析出的日期对象转为 YYYYMMDD 格式的字符串
+            start_str = pd.to_datetime(str(test_segment[0])).strftime('%Y%m%d')
+            end_str = pd.to_datetime(str(test_segment[1])).strftime('%Y%m%d')
+            # 将动态生成的文件名绑定到 self 上
+            self.csv_filename = f"lstm_predictions_{start_str}_{end_str}.csv"
+        except Exception as e:
+            print(f"-> [警告] 提取测试日期失败，使用默认文件名。原因: {e}")
+            self.csv_filename = "lstm_predictions_default.csv"
+
         print("-> [Strategy] 正在将动态参数注入配置...")
         handler_kwargs = dataset_config["kwargs"]["handler"]["kwargs"]
         handler_kwargs["instruments"] = "all"
@@ -54,7 +68,7 @@ class DeepGridStrategy:
         # ========================================================
         if is_training_day:
             print("-> [Strategy] 【周末任务】今天是周六，正在利用最新数据重新训练模型...")
-            self.model.fit(dataset,save_path=self.weight_path)
+            self.model.fit(dataset, save_path=self.weight_path)
             # 保存 PyTorch 模型权重
             print(f"-> [Strategy] 模型重新训练完成！最新权重已保存至: {self.weight_path}")
             
@@ -64,11 +78,11 @@ class DeepGridStrategy:
             if os.path.exists(self.weight_path):
                 print(f"-> [Strategy] 发现历史权重文件，正在极速加载: {self.weight_path}")
                 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-                self.model.LSTM_model.load_state_dict(torch.load(self.weight_path,map_location=device))
+                self.model.LSTM_model.load_state_dict(torch.load(self.weight_path, map_location=device))
                 self.model.fitted=True
             else:
                 print("-> [警告] 未找到历史权重文件！触发紧急回退机制：正在强制执行初始训练...")
-                self.model.fit(dataset,save_path=self.weight_path)
+                self.model.fit(dataset, save_path=self.weight_path)
                 print(f"-> [Strategy] 紧急训练完成，权重已保存至: {self.weight_path}")
         
         return dataset
@@ -82,7 +96,15 @@ class DeepGridStrategy:
         else:
             pred_df = predictions
             pred_df.columns = ['pred_center_return']
-        pred_df.to_csv("lstm_predictions_2019_2024.csv")    
+            
+        # ========================================================
+        # 【修改】：使用刚才动态生成的文件名进行保存
+        # ========================================================
+        # 使用 getattr 做一层安全防护，防止变量未被初始化的意外
+        export_name = getattr(self, 'csv_filename', 'lstm_predictions.csv')
+        pred_df.to_csv(export_name)    
+        print(f"-> [Strategy] 预测结果已导出至: {export_name}")
+        
         return pred_df
 
     def generate_actions(self, predictions_df:pd.DataFrame, current_prices, current_positions):
