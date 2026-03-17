@@ -75,7 +75,7 @@ Windows下调用dump_bin.py的脚本文件
 
 # 运行说明
 
-配置好环境后，在QMT平台上下载好所需数据，可以参考https://zhuanlan.zhihu.com/p/1987887250613228523，windows上运行```python ./data_process.py```，得到**qlib_source_csvs/**文件夹，内部是每个股票的csv文件；然后运行```./csv2bin.bat```处理得到**qlib_data/**文件夹，包含calendars/、features/、instruments/文件夹。在服务器上运行```python ./strategy_model.py```，会通过一个简单的测试用的main函数第一次调用策略，训练出模型**lstm_model_weights.pth**，并自行进行预测，LSTM模型预测结果会保存到lstm_predictions_2019_2024.csv中（代码写的烂，main函数中测试的两个股票最后没有输出是正常的，能跑通得到这两个文件即可）。
+配置好环境后，在QMT平台上下载好所需数据，可以参考https://zhuanlan.zhihu.com/p/1987887250613228523，windows上运行```python ./data_process.py```，得到**qlib_source_csvs/ **文件夹，内部是每个股票的csv文件；然后运行```./csv2bin.bat```处理得到**qlib_data/ **文件夹，包含calendars/、features/、instruments/文件夹。在服务器上运行```python ./strategy_model.py```，会通过一个简单的测试用的main函数第一次调用策略，训练出模型**lstm_model_weights.pth**，并自行进行预测，LSTM模型预测结果会保存到lstm_predictions_2019_2024.csv中（代码写的烂，main函数中测试的两个股票最后没有输出是正常的，能跑通得到这两个文件即可）。
 
 其他涉及到api交互等代码暂时用不到，目前是回测阶段
 
@@ -85,4 +85,4 @@ back_test.py中涉及到csv文件的路径，需要先把csv文件复制到windo
 
 将back_test.py代码复制到QMT的策略编辑器中，然后右侧可以配置一些参数，再点回测应该就可以正常跑通。
 
-![image](image.png)
+![image](./asset/image.png)
