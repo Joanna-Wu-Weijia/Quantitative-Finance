@@ -52,24 +52,23 @@ def convert_to_qlib_csv(stock_list, start_date, end_date, output_dir):
 
 def main():
 
-    # sector_list=xtdata.get_sector_list()
-    sector_list=["深证B股"]
-    for base_sector in sector_list:
-        print(f"{base_sector}:{len(xtdata.get_stock_list_in_sector(base_sector))}")
+    sector_list=xtdata.get_sector_list()
+    # sector_list=["深证B股"]
+    
 
-        target_stocks = get_target_stocks(
-            base_sector=base_sector,
-            end_date=config.RESEARCH_END_DATE,
-            top_n=config.TOP_N_STOCKS,
-            lookback_days=config.LOOKBACK_DAYS
-        )
-        
-        convert_to_qlib_csv(
-            stock_list=target_stocks,
-            start_date=config.RESEARCH_START_DATE,
-            end_date=config.RESEARCH_END_DATE,
-            output_dir=config.CSV_OUTPUT_DIR
-        )
+    target_stocks = get_target_stocks(
+        sector_list=sector_list,
+        end_date=config.RESEARCH_END_DATE,
+        top_n=config.TOP_N_STOCKS,
+        lookback_days=config.LOOKBACK_DAYS
+    )
+    print(target_stocks)
+    convert_to_qlib_csv(
+        stock_list=target_stocks,
+        start_date=config.RESEARCH_START_DATE,
+        end_date=config.RESEARCH_END_DATE,
+        output_dir=config.CSV_OUTPUT_DIR
+    )
 
 if __name__ == '__main__':
     main()

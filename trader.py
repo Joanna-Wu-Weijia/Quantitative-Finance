@@ -111,7 +111,7 @@ def main_trading_loop():
     print(f"当前价格: {current_prices}")
     
     # ========================================================
-    # 4. 远程召唤策略大脑
+    # 4. 远程预测
     # ========================================================
     actions = fetch_signals_from_linux(
         stock_list=qlib_stock_list,
