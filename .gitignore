@@ -2,10 +2,8 @@ __pycache__
 .vscode/
 
 #qlib-main/
-qlib_source_csvs/
-qlib_data/
-qlib_data_SZb/
-qlib_source_csvs_SZb/
+qlib_source_csvs*/
+qlib_data*/
 
 test.py
 qtest.py
