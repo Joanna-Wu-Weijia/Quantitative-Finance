@@ -11,7 +11,13 @@ def init(ContextInfo):
     ContextInfo.accountID = 'testS'
     
     # 1. 策略参数设置
-    ContextInfo.grid_step = 0.1
+    # [ElasticGrid-Step1] 用弹性网格参数替代固定步长 grid_step（原先是 10% 固定间距）
+    # [ElasticGrid-Step1] 这里先按“相对 predicted_center(P0) 的比例”硬编码上下限；每日会随 P0 自动缩放
+    ContextInfo.G_ul_ratio = 1.3   # [ElasticGrid-Step1] G_ul = P0 * G_ul_ratio（上半区绝对上限）
+    ContextInfo.G_ll_ratio = 0.7   # [ElasticGrid-Step1] G_ll = P0 * G_ll_ratio（下半区绝对下限）
+    ContextInfo.n_u = 6            # [ElasticGrid-Step1] 上半区网格条数
+    ContextInfo.n_l = 6            # [ElasticGrid-Step1] 下半区网格条数
+
     ContextInfo.trend_threshold = 0.2
     ContextInfo.max_cash_per_stock = 10000  # 单只股票每次买入金额上限
     
